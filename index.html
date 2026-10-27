@@ -68,14 +68,15 @@
 
   // ⚠️⚠️⚠️ 部署前，請將這裡替換為您的 Firebase 專案設定 ⚠️⚠️⚠️
   const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
-  };
-
+  apiKey: "AIzaSyCrnifRu8jFHmX1I7oopjpE0rbZ85ws95Q",
+  authDomain: "voice-board-f1514.firebaseapp.com",
+  projectId: "voice-board-f1514",
+  storageBucket: "voice-board-f1514.firebasestorage.app",
+  messagingSenderId: "668847978053",
+  appId: "1:668847978053:web:fbed41a5362cf69fe2152c"
+};
+,
+  
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const messagesCol = collection(db, "voice_messages");
