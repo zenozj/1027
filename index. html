@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>雲端語音留言板</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+    .container { max-width: 500px; width: 100%; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 20px; box-sizing: border-box; }
+    h2 { text-align: center; color: #333; margin-top: 0; }
+    input[type="text"] { width: 100%; padding: 12px; margin: 10px 0 20px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+    .btn-group { display: flex; gap: 10px; }
+    button { flex: 1; padding: 12px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; color: white; font-weight: bold; transition: opacity 0.2s; }
+    button:active { opacity: 0.8; }
+    #recordBtn { background: #4f46e5; }
+    #stopBtn { background: #ef4444; display: none; }
+    #status { text-align: center; margin-top: 10px; font-size: 14px; color: #666; height: 20px; }
+    .message-list { margin-top: 30px; display: flex; flex-direction: column; gap: 15px; }
+    .message-card { background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 10px; }
+    .message-header { display: flex; justify-content: space-between; align-items: center; }
+    .nickname { font-weight: bold; color: #111; }
+    .time { font-size: 12px; color: #888; }
+    audio { width: 100%; height: 40px; }
+    .delete-btn { background: #fee2e2; color: #ef4444; font-size: 12px; padding: 6px 10px; border-radius: 6px; margin-left: auto; width: fit-content; }
+    /* 自訂確認彈窗 */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
+    .modal { background: white; padding: 20px; border-radius: 12px; width: 80%; max-width: 300px; text-align: center; }
+    .modal-btns { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-btns button { padding: 10px; }
+    .btn-cancel { background: #e5e7eb; color: #374151; }
+    .btn-confirm { background: #ef4444; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>🎙️ 語音留言板</h2>
+  <label for="nickname">您的暱稱 *</label>
+  <input type="text" id="nickname" placeholder="例如：訪客" required>
+  
+  <div class="btn-group">
+    <button id="recordBtn">開始錄音 (上限15秒)</button>
+    <button id="stopBtn">停止並發佈</button>
+  </div>
+  <div id="status"></div>
+
+  <div class="message-list" id="messageList">
+    <!-- 留言將動態插入於此 -->
+  </div>
+</div>
+
+<!-- 刪除確認彈窗 -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>確認刪除？</h3>
+    <p style="color: #666; font-size: 14px;">此錄音刪除後將無法還原。</p>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-confirm" id="confirmDeleteBtn">確認刪除</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // 引入 Firebase SDK (請確保替換為您 Firebase 主控台的設定)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+  // ⚠️⚠️⚠️ 部署前，請將這裡替換為您的 Firebase 專案設定 ⚠️⚠️⚠️
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const messagesCol = collection(db, "voice_messages");
+
+  let mediaRecorder;
+  let audioChunks = [];
+  let recordTimeout;
+  let currentDeleteId = null;
+
+  const nicknameInput = document.getElementById('nickname');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const statusDiv = document.getElementById('status');
+  const messageList = document.getElementById('messageList');
+  const deleteModal = document.getElementById('deleteModal');
+  const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+  // 取得支援的音訊格式 (解決 iOS / Android 格式相容問題)
+  function getSupportedMimeType() {
+    const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/aac'];
+    for (let t of types) {
+      if (MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return ''; // 瀏覽器預設
+  }
+
+  // 錄音邏輯
+  recordBtn.onclick = async () => {
+    if (!nicknameInput.value.trim()) return alert("請先輸入暱稱！");
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getSupportedMimeType();
+      mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        statusDiv.innerText = "處理中，請稍候...";
+        const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+        
+        // 轉為 Base64
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          let base64data = reader.result;
+          // 強制修正 Base64 標頭，避免 0:00 無法播放錯誤
+          if (base64data.includes('application/octet-stream')) {
+            base64data = base64data.replace('application/octet-stream', mimeType || 'audio/webm');
+          }
+
+          try {
+            await addDoc(messagesCol, {
+              nickname: nicknameInput.value.trim(),
+              audioUrl: base64data,
+              createdAt: serverTimestamp()
+            });
+            statusDiv.innerText = "發佈成功！";
+            setTimeout(() => statusDiv.innerText = "", 2000);
+          } catch (error) {
+            console.error("儲存失敗:", error);
+            statusDiv.innerText = "上傳失敗，檔案可能過大。";
+          }
+        };
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      recordBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
+      statusDiv.innerText = "錄音中... (上限 15 秒)";
+
+      // 強制 15 秒停止
+      recordTimeout = setTimeout(() => {
+        if (mediaRecorder.state === "recording") stopRecording();
+      }, 15000);
+
+    } catch (err) {
+      alert("無法存取麥克風，請確認瀏覽器權限。");
+    }
+  };
+
+  stopBtn.onclick = () => stopRecording();
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+      clearTimeout(recordTimeout);
+      recordBtn.style.display = 'block';
+      stopBtn.style.display = 'none';
+    }
+  }
+
+  // 監聽資料庫更新 (即時同步)
+  const q = query(messagesCol, orderBy("createdAt", "desc"));
+  onSnapshot(q, (snapshot) => {
+    messageList.innerHTML = "";
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docId = docSnap.id;
+      const timeStr = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : "剛剛";
+      
+      const card = document.createElement('div');
+      card.className = 'message-card';
+      card.innerHTML = `
+        <div class="message-header">
+          <span class="nickname">${data.nickname}</span>
+          <span class="time">${timeStr}</span>
+        </div>
+        <audio controls src="${data.audioUrl}"></audio>
+        <button class="delete-btn" onclick="openModal('${docId}')">刪除</button>
+      `;
+      messageList.appendChild(card);
+    });
+  });
+
+  // 刪除邏輯與彈窗控制
+  window.openModal = (id) => {
+    currentDeleteId = id;
+    deleteModal.style.display = 'flex';
+  };
+  
+  window.closeModal = () => {
+    currentDeleteId = null;
+    deleteModal.style.display = 'none';
+  };
+
+  confirmDeleteBtn.onclick = async () => {
+    if (currentDeleteId) {
+      await deleteDoc(doc(db, "voice_messages", currentDeleteId));
+      window.closeModal();
+    }
+  };
+</script>
+</body>
+</html>
