@@ -62,20 +62,18 @@
 </div>
 
 <script type="module">
-  // 引入 Firebase SDK (請確保替換為您 Firebase 主控台的設定)
+  // 引入 Firebase SDK
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
   import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-  // ⚠️⚠️⚠️ 部署前，請將這裡替換為您的 Firebase 專案設定 ⚠️⚠️⚠️
   const firebaseConfig = {
-  apiKey: "AIzaSyCrnifRu8jFHmX1I7oopjpE0rbZ85ws95Q",
-  authDomain: "voice-board-f1514.firebaseapp.com",
-  projectId: "voice-board-f1514",
-  storageBucket: "voice-board-f1514.firebasestorage.app",
-  messagingSenderId: "668847978053",
-  appId: "1:668847978053:web:fbed41a5362cf69fe2152c"
-};
-,
+    apiKey: "AIzaSyCrnifRu8jFHmX1I7oopjpE0rbZ85ws95Q",
+    authDomain: "voice-board-f1514.firebaseapp.com",
+    projectId: "voice-board-f1514",
+    storageBucket: "voice-board-f1514.firebasestorage.app",
+    messagingSenderId: "668847978053",
+    appId: "1:668847978053:web:fbed41a5362cf69fe2152c"
+  };
   
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
@@ -94,7 +92,7 @@
   const deleteModal = document.getElementById('deleteModal');
   const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
 
-  // 取得支援的音訊格式 (解決 iOS / Android 格式相容問題)
+  // 取得支援的音訊格式
   function getSupportedMimeType() {
     const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/aac'];
     for (let t of types) {
@@ -126,7 +124,6 @@
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           let base64data = reader.result;
-          // 強制修正 Base64 標頭，避免 0:00 無法播放錯誤
           if (base64data.includes('application/octet-stream')) {
             base64data = base64data.replace('application/octet-stream', mimeType || 'audio/webm');
           }
