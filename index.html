@@ -14,7 +14,7 @@
     button:active { opacity: 0.8; }
     #recordBtn { background: #4f46e5; }
     #stopBtn { background: #ef4444; display: none; }
-    #status { text-align: center; margin-top: 10px; font-size: 14px; color: #666; height: 20px; }
+    #status { text-align: center; margin-top: 10px; font-size: 14px; color: #ef4444; height: 20px; font-weight: bold; }
     .message-list { margin-top: 30px; display: flex; flex-direction: column; gap: 15px; }
     .message-card { background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 10px; }
     .message-header { display: flex; justify-content: space-between; align-items: center; }
@@ -39,7 +39,7 @@
   <input type="text" id="nickname" placeholder="例如：訪客" required>
   
   <div class="btn-group">
-    <button id="recordBtn">開始錄音 (上限15秒)</button>
+    <button id="recordBtn">開始錄音 (上限20秒)</button>
     <button id="stopBtn">停止並發佈</button>
   </div>
   <div id="status"></div>
@@ -82,6 +82,7 @@
   let mediaRecorder;
   let audioChunks = [];
   let recordTimeout;
+  let countdownInterval;
   let currentDeleteId = null;
 
   const nicknameInput = document.getElementById('nickname');
@@ -116,6 +117,7 @@
       };
 
       mediaRecorder.onstop = async () => {
+        statusDiv.style.color = "#666";
         statusDiv.innerText = "處理中，請稍候...";
         const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
         
@@ -134,10 +136,12 @@
               audioUrl: base64data,
               createdAt: serverTimestamp()
             });
+            statusDiv.style.color = "#10b981";
             statusDiv.innerText = "發佈成功！";
             setTimeout(() => statusDiv.innerText = "", 2000);
           } catch (error) {
             console.error("儲存失敗:", error);
+            statusDiv.style.color = "#ef4444";
             statusDiv.innerText = "上傳失敗，檔案可能過大。";
           }
         };
@@ -147,12 +151,22 @@
       mediaRecorder.start();
       recordBtn.style.display = 'none';
       stopBtn.style.display = 'block';
-      statusDiv.innerText = "錄音中... (上限 15 秒)";
+      
+      let remaining = 20;
+      statusDiv.style.color = "#ef4444";
+      statusDiv.innerText = `🔴 錄音中... 剩餘 ${remaining} 秒`;
 
-      // 強制 15 秒停止
+      countdownInterval = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          statusDiv.innerText = `🔴 錄音中... 剩餘 ${remaining} 秒`;
+        }
+      }, 1000);
+
+      // 強制 20 秒停止
       recordTimeout = setTimeout(() => {
         if (mediaRecorder.state === "recording") stopRecording();
-      }, 15000);
+      }, 20000);
 
     } catch (err) {
       alert("無法存取麥克風，請確認瀏覽器權限。");
@@ -165,6 +179,7 @@
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
       clearTimeout(recordTimeout);
+      clearInterval(countdownInterval);
       recordBtn.style.display = 'block';
       stopBtn.style.display = 'none';
     }
